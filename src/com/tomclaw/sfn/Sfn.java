@@ -8,6 +8,7 @@ import java.nio.ByteOrder;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 
 import static com.tomclaw.sfn.StreamHelper.readLine;
 
@@ -37,7 +38,7 @@ public class Sfn {
         socket = new ServerSocket(port).accept();
     }
 
-    public void sendFiles(File... files) throws IOException, NoSuchAlgorithmException {
+    public void sendFiles(List<File> files) throws IOException, NoSuchAlgorithmException {
         ByteBuffer fileLength = ByteBuffer.allocate(8);
         fileLength.order(ByteOrder.LITTLE_ENDIAN);
         try (DataOutputStream output = new DataOutputStream(

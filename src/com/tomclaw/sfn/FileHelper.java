@@ -1,11 +1,10 @@
 package com.tomclaw.sfn;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class FileHelper {
 
@@ -25,6 +24,21 @@ public class FileHelper {
             result.append(Integer.toString((b & 0xff) + 0x100, 16).substring(1));
         }
         return result.toString();
+    }
+
+    public static List<File> listFiles(File source) {
+        List<File> allFiles = new ArrayList<>();
+        File[] files = source.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    allFiles.addAll(listFiles(file));
+                } else {
+                    allFiles.add(file);
+                }
+            }
+        }
+        return allFiles;
     }
 
 }
