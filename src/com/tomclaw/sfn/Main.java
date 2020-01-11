@@ -17,6 +17,7 @@ public class Main {
             File dir = null;
             int port = DEFAULT_PORT_NUMBER;
             List<File> files = new ArrayList<>();
+            boolean isCorrect = false;
             for (int c = 0; c < args.length; c++) {
                 String arg = args[c];
                 switch (arg) {
@@ -25,10 +26,12 @@ public class Main {
                         if (c + 1 < args.length) {
                             host = args[++c];
                         }
+                        isCorrect = true;
                         break;
                     case "--listen":
                     case "-l":
                         isListen = true;
+                        isCorrect = true;
                         break;
                     case "--port":
                     case "-p":
@@ -68,22 +71,14 @@ public class Main {
                         break;
                     case "--help":
                     case "-h":
-                        println("Usage:");
-                        println("");
-                        println("    siphon --listen [options]");
-                        println("    siphon --connect <address> [options]");
-                        println("");
-                        println("Options:");
-                        println("");
-                        println("    --version,   -v     Show sfn version and exit.");
-                        println("    --help,      -h     Show this text and exit.");
-                        println("    --port,      -p     Use specified port. Defaults to 3214.");
-                        println("    --file,      -f     Send specified files of directories after connection." +
-                                "                        Use \"-f file1 -f file2\" to send multiple files.");
-                        println("    --directory, -d     Use specified directory to store received files.\n" +
-                                "                        Format is: /home/user/folder/.\n");
+                    default:
+                        printHelp();
                         return;
                 }
+            }
+            if (!isCorrect) {
+                printHelp();
+                return;
             }
             Sfn sfn = new Sfn(withIntegrityCheck);
             if (isListen) {
@@ -100,6 +95,23 @@ public class Main {
         } catch (Throwable throwable) {
             throwable.printStackTrace();
         }
+    }
+
+    private static void printHelp() {
+        println("Usage:");
+        println("");
+        println("    siphon --listen [options]");
+        println("    siphon --connect <address> [options]");
+        println("");
+        println("Options:");
+        println("");
+        println("    --version,   -v     Show sfn version and exit.");
+        println("    --help,      -h     Show this text and exit.");
+        println("    --port,      -p     Use specified port. Defaults to 3214.");
+        println("    --file,      -f     Send specified files of directories after connection.\n" +
+                "                        Use \"-f file1 -f file2\" to send multiple files.");
+        println("    --directory, -d     Use specified directory to store received files.\n" +
+                "                        Format is: /home/user/folder/.\n");
     }
 
     private static void println(String s) {
