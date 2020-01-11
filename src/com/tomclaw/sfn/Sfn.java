@@ -1,0 +1,145 @@
+package com.tomclaw.sfn;
+
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
+import static com.tomclaw.sfn.StreamHelper.readLine;
+
+public class Sfn {
+
+    public static final int DEFAULT_PORT_NUMBER = 3214;
+
+    private static final byte FILE = 0x01;
+    private static final byte DONE = 0x02;
+    private static final byte MD5_WITH_FILE = 0x03;
+    private static final byte FILE_WITH_MD5 = 0x04;
+
+    private boolean withIntegrityCheck;
+    private Socket socket;
+    private ProgressBar progressBar;
+
+    public Sfn(boolean withIntegrityCheck) {
+        this.withIntegrityCheck = withIntegrityCheck;
+        this.progressBar = new ProgressBar();
+    }
+
+    public void connect(String ip, int port) throws IOException {
+        socket = new Socket(ip, port);
+    }
+
+    public void listen(int port) throws IOException {
+        socket = new ServerSocket(port).accept();
+    }
+
+    public void sendFiles(File... files) throws IOException, NoSuchAlgorithmException {
+        ByteBuffer fileLength = ByteBuffer.allocate(8);
+        fileLength.order(ByteOrder.LITTLE_ENDIAN);
+        try (DataOutputStream output = new DataOutputStream(
+                new BufferedOutputStream(
+                        socket.getOutputStream()
+                )
+        )) {
+            for (File file : files) {
+                progressBar.setupBar(file.getName(), file.length());
+                output.writeByte(withIntegrityCheck ? FILE_WITH_MD5 : FILE);
+                output.writeBytes(file.getName() + '\n');
+                fileLength.putLong(file.length());
+                output.write(fileLength.array());
+                fileLength.clear();
+                MessageDigest messageDigest = MessageDigest.getInstance("MD5");
+                try (InputStream input = new DigestInputStream(new FileInputStream(file), messageDigest)) {
+                    byte[] buf = new byte[10240];
+                    int len;
+                    long sent = 0;
+                    while ((len = input.read(buf)) > 0) {
+                        output.write(buf, 0, len);
+                        sent += len;
+                        progressBar.showBar(sent);
+                    }
+                }
+                progressBar.done();
+                if (withIntegrityCheck) {
+                    byte[] digest = messageDigest.digest();
+                    output.writeBytes(arrayToHex(digest) + '\n');
+                }
+            }
+            output.writeByte(DONE);
+            output.flush();
+        }
+    }
+
+    public void receiveFiles(File dir) throws IOException, SfnProtocolException, NoSuchAlgorithmException {
+        ByteBuffer fileLength = ByteBuffer.allocate(8);
+        fileLength.order(ByteOrder.LITTLE_ENDIAN);
+        try (DataInputStream input = new DataInputStream(new BufferedInputStream(socket.getInputStream()))) {
+            boolean isActive = true;
+            do {
+                int type = input.readByte();
+                switch (type) {
+                    case FILE:
+                    case MD5_WITH_FILE:
+                    case FILE_WITH_MD5:
+                        String fileName = readLine(input);
+                        if (fileName == null || fileName.length() == 0) {
+                            throw new SfnProtocolException();
+                        }
+                        input.readFully(fileLength.array(), 0, fileLength.capacity());
+                        long fileSize = fileLength.getLong();
+                        fileLength.clear();
+                        String md5 = null;
+                        if (type == MD5_WITH_FILE) {
+                            md5 = readLine(input);
+                        }
+                        MessageDigest messageDigest = MessageDigest.getInstance("MD5");
+                        File file = new File(dir, fileName);
+                        try (OutputStream output = new FileOutputStream(file)) {
+                            byte[] buf = new byte[10240];
+                            int len;
+                            long totalRead = 0;
+                            do {
+                                int read = (int) Math.min(fileSize - totalRead, buf.length);
+                                len = input.read(buf, 0, read);
+                                if (len == -1) {
+                                    throw new EOFException();
+                                }
+                                messageDigest.update(buf, 0, len);
+                                output.write(buf, 0, len);
+                            } while ((totalRead += len) < fileSize);
+                        }
+                        if (type == FILE_WITH_MD5) {
+                            md5 = readLine(input);
+                        }
+                        if (md5 != null) {
+                            byte[] digest = messageDigest.digest();
+                            String md5hex = arrayToHex(digest);
+                            boolean checkPassed = md5.equals(md5hex);
+                            if (checkPassed) {
+                                System.out.printf(" => MD5 [%s] check passed\n", md5hex);
+                            } else {
+                                System.out.printf(" => MD5 check failed!\n remote: %s\n local:  %s\n", md5, md5hex);
+                            }
+                        }
+                        break;
+                    case DONE:
+                        isActive = false;
+                        break;
+                }
+            } while (isActive);
+        }
+    }
+
+    private static String arrayToHex(byte[] data) {
+        StringBuilder result = new StringBuilder();
+        for (byte b : data) {
+            result.append(Integer.toString((b & 0xff) + 0x100, 16).substring(1));
+        }
+        return result.toString();
+    }
+
+}
