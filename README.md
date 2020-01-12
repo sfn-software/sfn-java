@@ -19,6 +19,11 @@ Options:
 * `--file`, `-f`: Send specified files of directories after connection. Use "-f file1 -f file2" to send multiple files.
 * `--directory`, `-d`: Use specified directory to store received files. Format is: /home/user/folder/.
 
+Screenshot
+----------
+
+![image](https://raw.github.com/solkin/sfn-java/master/art/main.png)
+
 Related projects
 ----------------
 
