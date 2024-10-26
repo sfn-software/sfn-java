@@ -9,6 +9,7 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.regex.Matcher;
 
 import static com.tomclaw.sfn.StreamHelper.readLine;
 
@@ -16,17 +17,18 @@ public class Sfn {
 
     public static final int DEFAULT_PORT_NUMBER = 3214;
 
-    private static final byte FILE = 0x01;
+    static final byte FILE = 0x01;
     private static final byte DONE = 0x02;
     private static final byte MD5_WITH_FILE = 0x03;
-    private static final byte FILE_WITH_MD5 = 0x04;
+    static final byte FILE_WITH_MD5 = 0x04;
+    static final byte FILE_WITH_PATH = 0x05;
 
-    private boolean withIntegrityCheck;
+    private final int transferType;
     private Socket socket;
-    private ProgressBar progressBar;
+    private final ProgressBar progressBar;
 
-    public Sfn(boolean withIntegrityCheck) {
-        this.withIntegrityCheck = withIntegrityCheck;
+    public Sfn(int transferType) {
+        this.transferType = transferType;
         this.progressBar = new ProgressBar();
     }
 
@@ -38,7 +40,7 @@ public class Sfn {
         socket = new ServerSocket(port).accept();
     }
 
-    public void sendFiles(List<File> files) throws IOException, NoSuchAlgorithmException {
+    public void sendFiles(List<FileHelper.FileWrapper> files) throws Exception {
         ByteBuffer fileLength = ByteBuffer.allocate(8);
         fileLength.order(ByteOrder.LITTLE_ENDIAN);
         try (DataOutputStream output = new DataOutputStream(
@@ -46,15 +48,37 @@ public class Sfn {
                         socket.getOutputStream()
                 )
         )) {
-            for (File file : files) {
-                progressBar.setupBar(file.getName(), file.length());
-                output.writeByte(withIntegrityCheck ? FILE_WITH_MD5 : FILE);
-                output.writeBytes(file.getName() + '\n');
-                fileLength.putLong(file.length());
+            for (FileHelper.FileWrapper wrapper : files) {
+                progressBar.setupBar(wrapper.file.getName(), wrapper.file.length());
+                boolean withIntegrityCheck = false;
+                switch (transferType) {
+                    case FILE_WITH_MD5:
+                    case FILE_WITH_PATH:
+                        withIntegrityCheck = true;
+                    case FILE:
+                        output.writeByte(transferType);
+                        break;
+                    default:
+                        throw new Exception("Unsupported file transfer type");
+                }
+                output.writeBytes(wrapper.file.getName() + '\n');
+                fileLength.putLong(wrapper.file.length());
                 output.write(fileLength.array());
                 fileLength.clear();
+                if (transferType == FILE_WITH_PATH) {
+                    String relPath = wrapper.file.getParent();
+                    if (relPath.startsWith(wrapper.baseDir)) {
+                        relPath = relPath.substring(wrapper.baseDir.length());
+                    }
+                    if (relPath.startsWith("/")) {
+                        relPath = relPath.substring(1);
+                    }
+                    output.writeBytes(relPath + '\n');
+
+                    output.writeBoolean(wrapper.file.canExecute());
+                }
                 MessageDigest messageDigest = MessageDigest.getInstance("MD5");
-                try (InputStream input = new DigestInputStream(new FileInputStream(file), messageDigest)) {
+                try (InputStream input = new DigestInputStream(new FileInputStream(wrapper.file), messageDigest)) {
                     byte[] buf = new byte[10240];
                     int len;
                     long sent = 0;
@@ -86,19 +110,35 @@ public class Sfn {
                     case FILE:
                     case MD5_WITH_FILE:
                     case FILE_WITH_MD5:
+                    case FILE_WITH_PATH:
                         String fileName = readLine(input);
-                        if (fileName == null || fileName.length() == 0) {
+                        if (fileName == null || fileName.isEmpty()) {
                             throw new SfnProtocolException();
                         }
                         input.readFully(fileLength.array(), 0, fileLength.capacity());
                         long fileSize = fileLength.getLong();
                         fileLength.clear();
+                        String filePath = "";
+                        boolean executable = false;
+                        File fileDir = dir;
+                        if (type == FILE_WITH_PATH) {
+                            filePath = readLine(input);
+                            if (filePath == null) {
+                                throw new SfnProtocolException();
+                            }
+                            filePath = filePath.replaceAll("/", Matcher.quoteReplacement(File.separator));
+                            fileDir = new File(fileDir, filePath);
+                            if (!fileDir.exists() && !fileDir.mkdirs()) {
+                                throw new IOException("Failed to create dirs");
+                            }
+                            executable = input.readBoolean();
+                        }
                         String md5 = null;
                         if (type == MD5_WITH_FILE) {
                             md5 = readLine(input);
                         }
                         MessageDigest messageDigest = MessageDigest.getInstance("MD5");
-                        File file = new File(dir, fileName);
+                        File file = new File(fileDir, fileName);
                         try (OutputStream output = new FileOutputStream(file)) {
                             byte[] buf = new byte[10240];
                             int len;
@@ -113,7 +153,10 @@ public class Sfn {
                                 output.write(buf, 0, len);
                             } while ((totalRead += len) < fileSize);
                         }
-                        if (type == FILE_WITH_MD5) {
+                        if (!file.setExecutable(executable)) {
+                            System.out.printf(" => Unable to mark file %s executable\n", file.getName());
+                        }
+                        if (type == FILE_WITH_MD5 || type == FILE_WITH_PATH) {
                             md5 = readLine(input);
                         }
                         if (md5 != null) {

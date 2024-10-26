@@ -15,7 +15,12 @@ public class ProgressBar {
     }
 
     public void showBar(long totalRead) {
-        int percent = (int) ((totalRead * 100) / fileSize);
+        int percent;
+        if (fileSize > 0) {
+            percent = (int) ((totalRead * 100) / fileSize);
+        } else {
+            percent = 100;
+        }
         String metrics = "Byte";
         if (totalRead < 1024) {
             metrics = "Byte";
