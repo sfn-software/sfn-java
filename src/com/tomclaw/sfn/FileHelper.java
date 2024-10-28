@@ -8,6 +8,16 @@ import java.util.List;
 
 public class FileHelper {
 
+    public static class FileWrapper {
+        public String baseDir;
+        public File file;
+
+        public FileWrapper(String baseDir, File file) {
+            this.baseDir = baseDir;
+            this.file = file;
+        }
+    }
+
     public static String calculateMD5(File file) throws NoSuchAlgorithmException, IOException {
         MessageDigest messageDigest = MessageDigest.getInstance("MD5");
         try (InputStream fileStream = new FileInputStream(file)) {
@@ -26,15 +36,15 @@ public class FileHelper {
         return result.toString();
     }
 
-    public static List<File> listFiles(File source) {
-        List<File> allFiles = new ArrayList<>();
+    public static List<FileWrapper> listFiles(String baseDir, File source) {
+        List<FileWrapper> allFiles = new ArrayList<>();
         File[] files = source.listFiles();
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
-                    allFiles.addAll(listFiles(file));
+                    allFiles.addAll(listFiles(baseDir, file));
                 } else {
-                    allFiles.add(file);
+                    allFiles.add(new FileWrapper(baseDir, file));
                 }
             }
         }

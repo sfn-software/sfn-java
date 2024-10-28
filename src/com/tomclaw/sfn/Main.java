@@ -5,18 +5,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.tomclaw.sfn.FileHelper.listFiles;
-import static com.tomclaw.sfn.Sfn.DEFAULT_PORT_NUMBER;
+import static com.tomclaw.sfn.Sfn.*;
 
 public class Main {
 
     public static void main(String[] args) {
         try {
-            boolean withIntegrityCheck = false;
+            int transferType = FILE;
             boolean isListen = false;
             String host = null;
             File dir = null;
             int port = DEFAULT_PORT_NUMBER;
-            List<File> files = new ArrayList<>();
+            List<FileHelper.FileWrapper> files = new ArrayList<>();
             boolean isCorrect = false;
             for (int c = 0; c < args.length; c++) {
                 String arg = args[c];
@@ -52,7 +52,11 @@ public class Main {
                         break;
                     case "--md5":
                     case "-m":
-                        withIntegrityCheck = true;
+                        transferType = FILE_WITH_MD5;
+                        break;
+                    case "--struct":
+                    case "-s":
+                        transferType = FILE_WITH_PATH;
                         break;
                     case "--file":
                     case "-f":
@@ -63,9 +67,9 @@ public class Main {
                                 return;
                             }
                             if (file.isDirectory()) {
-                                files.addAll(listFiles(file));
+                                files.addAll(listFiles(file.getAbsolutePath(), file));
                             } else {
-                                files.add(file);
+                                files.add(new FileHelper.FileWrapper("", file));
                             }
                         }
                         break;
@@ -80,7 +84,7 @@ public class Main {
                 printHelp();
                 return;
             }
-            Sfn sfn = new Sfn(withIntegrityCheck);
+            Sfn sfn = new Sfn(transferType);
             if (isListen) {
                 sfn.listen(port);
             } else if (host != null) {
@@ -92,8 +96,9 @@ public class Main {
             if (!files.isEmpty()) {
                 sfn.sendFiles(files);
             }
-        } catch (Throwable throwable) {
-            throwable.printStackTrace();
+        } catch (Throwable ex) {
+            println("Runtime error: " + ex.getMessage());
+            ex.printStackTrace();
         }
     }
 
@@ -108,9 +113,12 @@ public class Main {
         println("    --version,   -v     Show sfn version and exit.");
         println("    --help,      -h     Show this text and exit.");
         println("    --port,      -p     Use specified port. Defaults to 3214.");
+        println("    --md5,       -m     Use integrity checking.");
+        println("    --struct,    -s     Send multiple files with their directory structure\n" +
+                "                        (integrity checking is included).");
         println("    --file,      -f     Send specified files of directories after connection.\n" +
                 "                        Use \"-f file1 -f file2\" to send multiple files.");
-        println("    --directory, -d     Use specified directory to store received files.\n" +
+        println("    --dir, -d           Use specified directory to store received files.\n" +
                 "                        Format is: /home/user/folder/.\n");
     }
 
